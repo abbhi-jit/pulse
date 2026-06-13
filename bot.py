@@ -1,69 +1,90 @@
 import os
-from pathlib import Path
-
 import requests
-from google import genai
-from google.genai import types
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import date
 
+# Load Secrets
+EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
+EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
 
-WEATHER_URL = "https://wttr.in/Thiruvananthapuram?format=3"
-OUTPUT_FILE = Path("daily_summary.txt")
-FALLBACK_BRIEFING = "AI Briefing unavailable today."
-
-
-def fetch_weather_summary() -> str:
-    """Fetch a one-line weather summary for Thiruvananthapuram."""
-    response = requests.get(WEATHER_URL, timeout=10)
-    response.raise_for_status()
-    return response.text.strip()
-
-
-def generate_ai_briefing(weather_summary: str) -> str:
-    """Generate a context-aware morning briefing from the weather summary."""
+def get_weather(city="Thiruvananthapuram"):
+    url = f"https://wttr.in/{city}?format=3"
     try:
-        api_key = os.environ.get("AI_API_KEY")
-        if not api_key:
-            return FALLBACK_BRIEFING
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        return response.text.strip()
+    except Exception as e:
+        return f"Weather unavailable ({e})"
 
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model=os.environ.get("AI_MODEL", "gemini-3.5-flash"),
-            contents=f"Weather context: {weather_summary}",
-            config=types.GenerateContentConfig(
-                system_instruction=(
-                    "You are Pulse, a concise morning briefing assistant. "
-                    "Use the provided real-time Thiruvananthapuram weather "
-                    "context to generate a sharp, highly specific, exactly "
-                    "3-sentence morning briefing. Do not mention that you are "
-                    "an AI."
-                )
-            ),
-        )
-        return response.text.strip() or FALLBACK_BRIEFING
-    except Exception as exc:
-        print(f"AI briefing generation failed: {exc}")
-        return FALLBACK_BRIEFING
+def get_quote():
+    url = "https://zenquotes.io/api/random"
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+        quote = data[0]["q"]
+        author = data[0]["a"]
+        return f'"{quote}" - {author}'
+    except Exception as e:
+        return f"Quote unavailable ({e})"
 
+def build_summary():
+    today = date.today().strftime("%A, %d %B %Y")
+    weather = get_weather()
+    quote = get_quote()
 
-def build_daily_summary() -> str:
-    weather_summary = fetch_weather_summary()
-    ai_briefing = generate_ai_briefing(weather_summary)
+    summary = f"""
+======================================
+  PULSE - Daily Summary
+  {today}
+======================================
 
-    return f"""Pulse Daily Summary
+WEATHER
+  {weather}
 
-Weather:
-{weather_summary}
+TODAY'S QUOTE
+  {quote}
 
-Morning Briefing:
-{ai_briefing}
+======================================
 """
+    return summary
 
+def send_email(summary_text):
+    if not EMAIL_SENDER:
+        print("Missing Email Secrets!")
+        return
 
-def main() -> None:
-    summary = build_daily_summary()
+    msg = MIMEMultipart()
+    msg['From'] = EMAIL_SENDER
+    msg['To'] = EMAIL_RECEIVER
+    msg['Subject'] = " Your Daily Pulse Summary"
+
+    # Attach the summary text to the email body
+    msg.attach(MIMEText(summary_text, 'plain'))
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(EMAIL_SENDER, EMAIL_PASSWORD)
+        server.sendmail(EMAIL_SENDER, EMAIL_RECEIVER.split(","), msg.as_string())
+        server.quit()
+        print("Summary Email sent successfully!")
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+
+def run():
+    summary = build_summary()
     print(summary)
-    OUTPUT_FILE.write_text(summary, encoding="utf-8")
-
+    
+    # 1. Save it to a file (uploaded as a downloadable artifact)
+    with open("daily_summary.txt", "w", encoding="utf-8") as f:
+        f.write(summary)
+        
+    # 2. Send it to your inbox!
+    send_email(summary)
 
 if __name__ == "__main__":
-    main()
+    run()
