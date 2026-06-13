@@ -1,33 +1,43 @@
-name: Daily Pulse
+name: Daily Pulse Bot
 
 on:
   schedule:
-    - cron: "30 2 * * *"
-  workflow_dispatch:
+    # Runs at 8:00 AM IST (2:30 AM UTC) every day
+    - cron: '30 2 * * *'
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions tab
 
 jobs:
-  daily:
+  run-bot:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.11'
 
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Pulse bot
+      - name: Run Bot
         env:
-          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
         run: python bot.py
 
-      - name: Upload daily summary artifact
+      - name: Run Weather Alert
+        env:
+          OWM_API_KEY: ${{ secrets.OWM_API_KEY }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+        run: python weather_alert.py
+
+      - name: Upload Summary Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: daily-summary
+          name: daily-pulse-summary
           path: daily_summary.txt
